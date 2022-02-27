@@ -42,8 +42,15 @@ namespace PrChecker
 
             if (waitForExit)
             {
-                proc.WaitForExit(milliseconds: timeoutMs);
-                return (proc.ExitCode, sbStd.ToString(), sbError.ToString());
+                try
+                {
+                    proc.WaitForExit(milliseconds: timeoutMs);
+                    return (proc.ExitCode, sbStd.ToString(), sbError.ToString());
+                }
+                catch
+                {
+                    return (-1, sbStd.ToString(), sbError.ToString());
+                }
             }
             return (0, null, null);
         }
