@@ -37,7 +37,7 @@ namespace PrChecker
             if (!_prevValue.Equals(Value))
             {
                 _prevValue = Value;
-                var v_handler = ValueChanged;
+                EventHandler v_handler = ValueChanged;
                 v_handler?.Invoke(this, null);    // generate ValueChanged event.
             }
         }

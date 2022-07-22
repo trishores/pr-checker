@@ -45,16 +45,16 @@ namespace PrChecker
                     throw new Exception("First install GitHub CLI.");
                 }
 
-                var (exitCode, outData, errData) = ProcessTools.RunProcess("gh", $"auth status --hostname \"github.com\"");
+                (int exitCode, string outData, string errData) = ProcessTools.RunProcess("gh", $"auth status --hostname \"github.com\"");
                 if (exitCode != 0)
                 {
                     // Initiate web login:
-                    var si = new ProcessStartInfo
+                    ProcessStartInfo si = new ProcessStartInfo
                     {
                         FileName = "cmd",
                         Arguments = "/C gh auth login --web"
                     };
-                    var res0 = Process.Start(si);
+                    Process res0 = Process.Start(si);
                     res0.WaitForExit();
                     if (res0.ExitCode != 0)
                     {
@@ -67,7 +67,7 @@ namespace PrChecker
                 if (exitCode != 0 || errData.Trim(new[] { '\r', '\n' }).Length > 0) throw new Exception("repo list error");
 
                 JArray jArray1 = JArray.Parse(outData);
-                foreach (var obj in jArray1)
+                foreach (JToken obj in jArray1)
                 {
                     GitHubRepo repo = new();
                     repo.Owner = (string)obj["parent"]["owner"]["login"];
@@ -76,19 +76,19 @@ namespace PrChecker
                     repoList.Add(repo);
                 }
 
-                foreach (var repo in repoList)
+                foreach (GitHubRepo repo in repoList)
                 {
-                    var test = ProcessTools.RunProcess("gh", $"pr list --json");
+                    (int exitCode, string outData, string errData) test = ProcessTools.RunProcess("gh", $"pr list --json");
 
-                    (exitCode, outData, errData) = ProcessTools.RunProcess("gh", $"pr list --author @me --state {(prState == "Open or Merged" ? "all" : prState.ToLower())} --repo {repo.FullName} --search created:>={fromDate:yyy-MM-dd} --limit 1000 --json number,url,title,state,isDraft,createdAt,mergedAt,closedAt");
+                    (exitCode, outData, errData) = ProcessTools.RunProcess("gh", $"pr list --author @me --state {(prState == "Open or Merged" ? "all" : prState.ToLower())} --repo {repo.FullName} --search created:>={fromDate:yyy-MM-dd} --limit 1000 --json number,url,title,state,isDraft,createdAt,mergedAt,closedAt,mergedBy,labels,comments,files,changedFiles");
                     if (exitCode != 0 || errData.Trim(new[] { '\r', '\n' }).Length > 0) throw new Exception("pr list error");
                     JArray jArray2 = JArray.Parse(outData);
 
-                    (exitCode, outData, errData) = ProcessTools.RunProcess("gh", $"pr list --author @me --state {(prState == "Open or Merged" ? "all" : prState.ToLower())} --repo {repo.FullName} --search merged:>={fromDate:yyy-MM-dd} --limit 1000 --json number,url,title,state,isDraft,createdAt,mergedAt,closedAt");
+                    (exitCode, outData, errData) = ProcessTools.RunProcess("gh", $"pr list --author @me --state {(prState == "Open or Merged" ? "all" : prState.ToLower())} --repo {repo.FullName} --search merged:>={fromDate:yyy-MM-dd} --limit 1000 --json number,url,title,state,isDraft,createdAt,mergedAt,closedAt,mergedBy,labels,comments,files,changedFiles");
                     if (exitCode != 0 || errData.Trim(new[] { '\r', '\n' }).Length > 0) throw new Exception("pr list error");
                     JArray jArray3 = JArray.Parse(outData);
 
-                    foreach (var obj in new JArray(jArray2.Union(jArray3)))
+                    foreach (JToken obj in new JArray(jArray2.Union(jArray3)))
                     {
                         GitHubPr pr = new();
                         pr.Number = (int)obj["number"];
@@ -96,6 +96,7 @@ namespace PrChecker
                         pr.Title = (string)obj["title"];
                         pr.State = (string)obj["state"];
                         pr.IsDraft = (bool)obj["isDraft"];
+                        pr.MergedBy = (string)obj.SelectToken("mergedBy.login");
                         pr.CreatedAt = DateTime.ParseExact((string)obj["createdAt"], "MM/dd/yyyy HH:mm:ss", CultureInfo.InvariantCulture);
                         if (pr.State == "MERGED")
                             pr.MergedAt = DateTime.ParseExact((string)obj["mergedAt"], "MM/dd/yyyy HH:mm:ss", CultureInfo.InvariantCulture);
@@ -105,12 +106,9 @@ namespace PrChecker
                         if (!repo.prList.Any(x => x.Number == pr.Number)) repo.prList.Add(pr);
 
                         // Get changed file stats (`changedFiles` returns a count value, `files` returns stats for each changed file but only for first 100 changed files).
-                        (exitCode, outData, errData) = ProcessTools.RunProcess("gh", $"pr view {pr.Url} --json changedFiles,files");
-                        if (exitCode != 0 || errData.Trim(new[] { '\r', '\n' }).Length > 0) throw new Exception("pr view error");
-                        JObject jObj = JObject.Parse(outData);
-                        var fileItems = jObj["files"];
-                        pr.ChangedFileCount = jObj["changedFiles"].Value<int>();
-                        foreach (var fileItem in fileItems)
+                        JToken fileItems = obj["files"];
+                        pr.ChangedFileCount = obj["changedFiles"].Value<int>();
+                        foreach (JToken fileItem in fileItems)
                         {
                             PrFile prFile = new();
                             prFile.Path = fileItem["path"].Value<string>();
@@ -118,15 +116,35 @@ namespace PrChecker
                             prFile.Deletions = fileItem["deletions"].Value<int>();
                             pr.PrFileList.Add(prFile);
                         }
+
+                        // Get comments.
+                        JToken commentItems = obj["comments"];
+                        foreach (JToken commentItem in commentItems)
+                        {
+                            PrComment prComment = new();
+                            prComment.Author = (string)commentItem.SelectToken("author.login");
+                            prComment.CreatedAt = DateTime.ParseExact((string)commentItem["createdAt"], "MM/dd/yyyy HH:mm:ss", CultureInfo.InvariantCulture);
+                            prComment.Body = (string)commentItem["body"];
+                            pr.PrCommentList.Add(prComment);
+                        }
+
+                        // Get labels.
+                        JToken labelItems = obj["labels"];
+                        foreach (JToken labelItem in labelItems)
+                        {
+                            PrLabel prLabel = new();
+                            prLabel.Name = (string)labelItem["name"];
+                            pr.PrLabelList.Add(prLabel);
+                        }
                     }
                 }
 
                 // Format stats.
                 List<PrEvent> prEventList = new();
-                foreach (var repo in repoList)
-                    foreach (var pr in repo.prList)
+                foreach (GitHubRepo repo in repoList)
+                    foreach (GitHubPr pr in repo.prList)
                     {
-                        var stats = $"{pr.Url} ||| {pr.Title} ||| {pr.FileTypeCount.Text} $$ {pr.FileType.Text} ||| {pr.FileTypeCount.Image} $$ {pr.FileType.Image} ||| {pr.FileTypeCount.Code} $$ {pr.FileType.Code} ||| {pr.FileTypeCount.UnknownType} $$ {pr.FileType.UnknownType} ||| {pr.FileModsCount}";
+                        string stats = $"{pr.Url} ||| {pr.Title} ||| {pr.FileTypeCount.Text} $$ {pr.FileType.Text} ||| {pr.FileTypeCount.Image} $$ {pr.FileType.Image} ||| {pr.FileTypeCount.Code} $$ {pr.FileType.Code} ||| {pr.FileTypeCount.UnknownType} $$ {pr.FileType.UnknownType} ||| {pr.FileModsCount}";
 
                         if (pr.State == "OPEN" && (prState == "All" || prState == "Open or Merged" || prState == "Open"))
                         {
@@ -176,7 +194,7 @@ namespace PrChecker
             await Task.Run(async () =>
             {
                 // Test whether Azure CLI is installed.
-                var (exitCode, outData, errData) = ProcessTools.RunProcess("where", $"az");
+                (int exitCode, string outData, string errData) = ProcessTools.RunProcess("where", $"az");
                 if (exitCode != 0) throw new Exception("First install Azure CLI.");
 
                 // Get username.
@@ -192,8 +210,8 @@ namespace PrChecker
 
                 // Parse project list.
                 JObject jObj = JObject.Parse(outData);
-                var jArray1 = (JArray)jObj["value"];
-                foreach (var obj in jArray1)
+                JArray jArray1 = (JArray)jObj["value"];
+                foreach (JToken obj in jArray1)
                 {
                     DevOpsProject proj = new();
                     proj.Id = (string)obj["id"];
@@ -202,7 +220,7 @@ namespace PrChecker
                 }
 
                 // Iterate projects to get repo info.
-                foreach (var proj in projList)
+                foreach (DevOpsProject proj in projList)
                 {
                     if (proj.Name != "Embedded") continue;  // debug
 
@@ -210,7 +228,7 @@ namespace PrChecker
                     if (exitCode != 0 || errData.Trim(new[] { '\r', '\n' }).Length > 0) throw new Exception($"Azure CLI error message: \"{errData}\"");
 
                     JArray jArray2 = JArray.Parse(outData);
-                    foreach (var obj2 in jArray2)
+                    foreach (JToken obj2 in jArray2)
                     {
                         DevOpsRepo repo = new();
                         repo.Name = (string)obj2["name"];
@@ -226,7 +244,7 @@ namespace PrChecker
                         JArray jArray3 = JArray.Parse(outData);
 
                         // Parse PRs.
-                        foreach (var obj3 in jArray3)
+                        foreach (JToken obj3 in jArray3)
                         {
                             DevOpsPr pr = new();
                             pr.PullRequestId = (int)obj3["pullRequestId"];
@@ -244,10 +262,10 @@ namespace PrChecker
                             }
 
                             // Get commits in PR.
-                            var prUrl = new Uri(pr.Url);
-                            var collection = prUrl.Segments[1].Trim('/');
+                            Uri prUrl = new Uri(pr.Url);
+                            string collection = prUrl.Segments[1].Trim('/');
                             // e.g. $"https://powerbi.visualstudio.com/DefaultCollection/Embedded/_apis/git/repositories/PowerBI-CSharp/pullRequests/201738/commits?api-version=5.";
-                            var url = $"https://{prUrl.Host}/{collection}/{proj.Name}/_apis/git/repositories/{repo.Name}/pullRequests/{pr.PullRequestId}/commits?api-version=5.";
+                            string url = $"https://{prUrl.Host}/{collection}/{proj.Name}/_apis/git/repositories/{repo.Name}/pullRequests/{pr.PullRequestId}/commits?api-version=5.";
                             if (pr.PullRequestId == 201738)
                             { }
                             outData = await AzureDevOps_GetStringAsync(url);
@@ -255,8 +273,8 @@ namespace PrChecker
 
                             // Parse commits.
                             jObj = JObject.Parse(outData);
-                            var jArray4 = (JArray)jObj["value"];
-                            foreach (var obj4 in jArray4)
+                            JArray jArray4 = (JArray)jObj["value"];
+                            foreach (JToken obj4 in jArray4)
                             {
                                 DevOpsCommit commit = new();
                                 commit.Id = (string)obj4["commitId"];
@@ -270,15 +288,15 @@ namespace PrChecker
 
                                 // Get files.
                                 jObj = JObject.Parse(outData);
-                                var jArray5 = (JArray)jObj["changes"];
-                                foreach (var obj5 in jArray5)
+                                JArray jArray5 = (JArray)jObj["changes"];
+                                foreach (JToken obj5 in jArray5)
                                 {
-                                    var isFolder = (string)obj5.SelectToken("item.isFolder");
+                                    string isFolder = (string)obj5.SelectToken("item.isFolder");
                                     if (isFolder == "True")
                                         continue;
                                     DevOpsFile adoFile = new();
-                                    var fileUrl = ((string)obj5.SelectToken("item.url")).Replace("%2F", "/");
-                                    var fileUri = new Uri(fileUrl);
+                                    string fileUrl = ((string)obj5.SelectToken("item.url")).Replace("%2F", "/");
+                                    Uri fileUri = new Uri(fileUrl);
                                     adoFile.Name = fileUri.Segments.Last().Trim('/');
                                     commit.FileList.Add(adoFile);
                                 }
@@ -289,11 +307,11 @@ namespace PrChecker
 
                 // Format stats.
                 List<PrEvent> prEventList = new();
-                foreach (var proj in projList)
-                    foreach (var repo in proj.repoList)
-                        foreach (var pr in repo.PrList)
+                foreach (DevOpsProject proj in projList)
+                    foreach (DevOpsRepo repo in proj.repoList)
+                        foreach (DevOpsPr pr in repo.PrList)
                         {
-                            var stats = $"{pr.Url} ||| {pr.Title} ||| {pr.FileTypeCount.Text} $$ {pr.FileType.Text} ||| {pr.FileTypeCount.Image} $$ {pr.FileType.Image} ||| {pr.FileTypeCount.Code} $$ {pr.FileType.Code} ||| {pr.FileTypeCount.UnknownType} $$ {pr.FileType.UnknownType} ||| {pr.FileModsCount}";
+                            string stats = $"{pr.Url} ||| {pr.Title} ||| {pr.FileTypeCount.Text} $$ {pr.FileType.Text} ||| {pr.FileTypeCount.Image} $$ {pr.FileType.Image} ||| {pr.FileTypeCount.Code} $$ {pr.FileType.Code} ||| {pr.FileTypeCount.UnknownType} $$ {pr.FileType.UnknownType} ||| {pr.FileModsCount}";
 
                             if (pr.Status == "active" && (prState == "All" || prState == "Open or Merged" || prState == "Open"))
                             {
@@ -339,7 +357,7 @@ namespace PrChecker
         {
             try
             {
-                var personalaccesstoken = Environment.GetEnvironmentVariable("AzureDevOps_Token", EnvironmentVariableTarget.User);
+                string personalaccesstoken = Environment.GetEnvironmentVariable("AzureDevOps_Token", EnvironmentVariableTarget.User);
 
                 client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
@@ -398,9 +416,9 @@ namespace PrChecker
             get
             {
                 List<DevOpsFile> fileNames = new();
-                foreach (var prCommit in PrCommitList)
+                foreach (DevOpsCommit prCommit in PrCommitList)
                 {
-                    foreach (var file in prCommit.FileList)
+                    foreach (DevOpsFile file in prCommit.FileList)
                     {
                         if (fileNames.All(x => !Equals(x.Name, file.Name)))
                             fileNames.Add(file);
@@ -486,6 +504,9 @@ namespace PrChecker
         internal DateTime ClosedAt;
         internal int ChangedFileCount;
         internal List<PrFile> PrFileList = new();   // gh cap at 100 changed files.
+        internal string MergedBy;
+        internal List<PrLabel> PrLabelList = new();
+        internal List<PrComment> PrCommentList = new();
 
         internal FileType FileType
         {
@@ -550,6 +571,19 @@ namespace PrChecker
                 }
             }
         }
+    }
+
+    internal class PrComment
+    {
+        internal string Author;
+        internal DateTime CreatedAt;
+        internal string Body;
+    }
+
+    internal class PrLabel
+    {
+        internal string Name;
+        internal DateTime CreatedAt;
     }
 
     internal class PrEvent

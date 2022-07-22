@@ -12,6 +12,7 @@ using Application = Microsoft.Office.Interop.Excel.Application;
 using Range = Microsoft.Office.Interop.Excel.Range;
 using System.Windows.Forms;
 using System.IO;
+using System.Linq;
 
 namespace PrChecker
 {
@@ -51,19 +52,20 @@ namespace PrChecker
                 Marshal.FinalReleaseComObject(excelRange);
 
                 // Get row data.
-                var rowsData = pipeSeparatedValues.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-                var rowNumber = 1;
+                string[] rowsData = pipeSeparatedValues.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+                int rowNumber = 1;
 
-                foreach (var rowData in rowsData)
+                //foreach (var rowData in rowsData.Where(x => x.Contains("1881219") && x.Contains("PR created")))
+                foreach (string rowData in rowsData)
                 {
                     // Get cell data.
-                    var columnsData = rowData.Split(" ||| ", StringSplitOptions.RemoveEmptyEntries);
+                    string[] columnsData = rowData.Split(" ||| ", StringSplitOptions.RemoveEmptyEntries);
 
                     // Iterate cells in row.
-                    for (var i = 0; i < columnsData.Length; i++)
+                    for (int i = 0; i < columnsData.Length; i++)
                     {
                         // Separate cell text from cell comment.
-                        var cellText = columnsData[i].Split("$$");
+                        string[] cellText = columnsData[i].Split("$$");
 
                         // Get cell reference.
                         Range cell = excelWorksheet.Cells[rowNumber, i + 1];

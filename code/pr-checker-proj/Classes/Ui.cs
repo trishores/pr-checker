@@ -25,7 +25,7 @@ namespace PrChecker
             InitializeComponent();
 
             // Defaults.
-            var version = Assembly.GetEntryAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion;
+            string version = Assembly.GetEntryAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion;
             Text = $"PR checker v{version}";
             cmbRepoType.Items.Add("GitHub");
             cmbRepoType.Items.Add("Azure DevOps");
@@ -115,14 +115,14 @@ namespace PrChecker
         private async Task GitHubPrsAsync()
         {
             // Run I/O task asynchronously.
-            var resPr = await PullRequests.GitHubPrsAsync(dtpFrom.Value, cmbPrState.Text);
+            string resPr = await PullRequests.GitHubPrsAsync(dtpFrom.Value, cmbPrState.Text);
 
             await Task.Run(() =>
             {
                 try
                 {
                     // Show result stats.
-                    var filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "github-pr.xlsx");
+                    string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "github-pr.xlsx");
                     ExcelTools.WriteExcelFile(ref filePath, resPr);
                     ProcessTools.RunProcess("cmd", $"start /r \"{filePath}\"", waitForExit: false);
                 }
@@ -142,14 +142,14 @@ namespace PrChecker
         private async Task DevOpsPrsAsync()
         {
             // Run I/O task asynchronously.
-            var resPr = await PullRequests.DevOpsPrsAsync(dtpFrom.Value, cmbPrState.Text);
+            string resPr = await PullRequests.DevOpsPrsAsync(dtpFrom.Value, cmbPrState.Text);
 
             await Task.Run(() =>
             {
                 try
                 {
                     // Show result stats.
-                    var filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"ado-pr.xlsx");
+                    string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"ado-pr.xlsx");
                     ExcelTools.WriteExcelFile(ref filePath, resPr);
                     if (File.Exists(filePath))
                     {
