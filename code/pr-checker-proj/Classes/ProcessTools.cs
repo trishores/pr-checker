@@ -16,7 +16,7 @@ namespace PrChecker
             StringBuilder sbStd = new();
             StringBuilder sbError = new();
 
-            using var proc = new Process();
+            using Process proc = new Process();
             proc.OutputDataReceived += new DataReceivedEventHandler((s, e) =>
             {
                 sbStd.AppendLine(e.Data + Environment.NewLine);
@@ -59,10 +59,10 @@ namespace PrChecker
         {
             ConsoleWriteLine($"\r\nStarting {filename} {args}\r\n", ConsoleColor.Green);
 
-            var sbOut = new StringBuilder();
-            var sbErr = new StringBuilder();
+            StringBuilder sbOut = new StringBuilder();
+            StringBuilder sbErr = new StringBuilder();
 
-            using (var proc = new Process())
+            using (Process proc = new Process())
             {
                 proc.OutputDataReceived += new DataReceivedEventHandler((s, e) =>
                 {
@@ -103,7 +103,7 @@ namespace PrChecker
             ConsoleWriteLine($"\r\nStarting dotnet {args}\r\n", ConsoleColor.Green);
 
             // Initialize new process:
-            using (var proc = new Process())
+            using (Process proc = new Process())
             {
                 //var sbOut = new StringBuilder();
                 //var sbErr = new StringBuilder();
